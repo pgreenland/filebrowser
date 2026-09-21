@@ -64,3 +64,14 @@ var settingsPutHandler = withAdmin(func(_ http.ResponseWriter, r *http.Request, 
 	err = d.store.Settings.Save(d.settings)
 	return errToStatus(err), err
 })
+
+var settingsRotateSigningKeyHandler = withAdmin(func(_ http.ResponseWriter, _ *http.Request, d *data) (int, error) {
+	key, err := settings.GenerateKey()
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	d.settings.Key = key
+	err = d.store.Settings.Save(d.settings)
+	return errToStatus(err), err
+})

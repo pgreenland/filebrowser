@@ -10,3 +10,9 @@ export async function update(settings: ISettings) {
     body: JSON.stringify(settings),
   });
 }
+
+export async function rotateSigningKey() {
+  await fetchURL(`/api/settings/key`, {
+    method: "POST",
+  });
+}

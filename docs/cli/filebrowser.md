@@ -71,6 +71,7 @@ filebrowser [flags]
   -p, --port string                    port to listen on (default "8080")
       --redisCacheUrl string           redis cache URL (for multi-instance deployments), e.g. redis://user:pass@host:port
   -r, --root string                    root to prepend to relative paths (default ".")
+      --rotateSigningKeyOnBoot         rotate JWT signing key on startup
       --socket string                  socket to listen to (cannot be used with address, port, cert nor key flags)
       --socketPerm uint32              unix socket file permissions (default 438)
       --tokenExpirationTime string     user session timeout (default "2h")
@@ -86,4 +87,3 @@ filebrowser [flags]
 * [filebrowser rules](filebrowser-rules.md)	 - Rules management utility
 * [filebrowser users](filebrowser-users.md)	 - Users management utility
 * [filebrowser version](filebrowser-version.md)	 - Print the version number
-

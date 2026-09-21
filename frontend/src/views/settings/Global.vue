@@ -153,6 +153,18 @@
               />
             </p>
           </div>
+
+          <h3>{{ t("settings.security") }}</h3>
+          <p class="small">{{ t("settings.rotateSigningKeyWarning") }}</p>
+          <p>
+            <input
+              class="button button--flat button--red"
+              type="button"
+              :value="t('settings.rotateSigningKey')"
+              @click="rotateSigningKey"
+              :disabled="rotatingSigningKey"
+            />
+          </p>
         </div>
 
         <div class="card-action">
@@ -253,6 +265,7 @@ import Themes from "@/components/settings/Themes.vue";
 import UserForm from "@/components/settings/UserForm.vue";
 import { useLayoutStore } from "@/stores/layout";
 import { enableExec } from "@/utils/constants";
+import { logout } from "@/utils/auth";
 import { getTheme, setTheme } from "@/utils/theme";
 import Errors from "@/views/Errors.vue";
 import { computed, inject, onBeforeUnmount, onMounted, ref } from "vue";
@@ -263,6 +276,7 @@ const originalSettings = ref<ISettings | null>(null);
 const settings = ref<ISettings | null>(null);
 const debounceTimeout = ref<number | null>(null);
 const pendingChunkSize = ref<string | null>(null);
+const rotatingSigningKey = ref<boolean>(false);
 
 const commandObject = ref<{
   [key: string]: string[] | string;
@@ -374,6 +388,22 @@ const save = async () => {
   }
 
   return true;
+};
+
+const rotateSigningKey = async () => {
+  if (!window.confirm(t("settings.rotateSigningKeyConfirm"))) {
+    return;
+  }
+
+  rotatingSigningKey.value = true;
+  try {
+    await api.rotateSigningKey();
+    logout();
+  } catch (e: any) {
+    $showError(e);
+  } finally {
+    rotatingSigningKey.value = false;
+  }
 };
 // Parse the user-friendly input (e.g., "20M" or "1T") to bytes
 const parseBytes = (input: string) => {

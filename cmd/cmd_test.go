@@ -1,14 +1,18 @@
 package cmd
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/asdine/storm/v3"
 	"github.com/samber/lo"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 
 	"github.com/filebrowser/filebrowser/v2/auth"
 	"github.com/filebrowser/filebrowser/v2/settings"
+	"github.com/filebrowser/filebrowser/v2/storage/bolt"
 )
 
 // TestEnvCollisions ensures that there are no collisions in the produced environment
@@ -57,5 +61,41 @@ func TestGetSettingsFollowExternalSymlinks(t *testing.T) {
 
 	if !ser.FollowExternalSymlinks {
 		t.Error("expected FollowExternalSymlinks to be persisted as true")
+	}
+}
+
+func TestRotateSigningKeyOnBoot(t *testing.T) {
+	db, err := storm.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	st, err := bolt.NewStorage(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initial := []byte("initial-signing-key")
+	if err := st.Settings.Save(&settings.Settings{Key: initial}); err != nil {
+		t.Fatal(err)
+	}
+
+	v := viper.New()
+	v.Set("rotateSigningKeyOnBoot", true)
+
+	if err := rotateSigningKeyOnBoot(v, st); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := st.Settings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.Key) == 0 {
+		t.Fatal("expected non-empty key after rotation")
+	}
+	if string(updated.Key) == string(initial) {
+		t.Fatal("expected key to be rotated")
 	}
 }

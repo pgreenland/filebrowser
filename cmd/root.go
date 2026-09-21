@@ -92,6 +92,7 @@ func init() {
 	flags.String("cacheDir", "", "file cache directory (disabled if empty)")
 	flags.String("redisCacheUrl", "", "redis cache URL (for multi-instance deployments), e.g. redis://user:pass@host:port")
 	flags.Int("imageProcessors", 4, "image processors count")
+	flags.Bool("rotateSigningKeyOnBoot", false, "rotate JWT signing key on startup")
 	addServerFlags(flags)
 }
 
@@ -191,6 +192,9 @@ user created with the credentials from options "username" and "password".`,
 			return err
 		}
 		setupLog(server.Log)
+		if err := rotateSigningKeyOnBoot(v, st.Storage); err != nil {
+			return err
+		}
 
 		log.Println("NOTICE: File Browser is being wound down.")
 		log.Println("NOTICE: The project is archived on 2026-09-01, after which there will be no")
@@ -284,6 +288,30 @@ user created with the credentials from options "username" and "password".`,
 
 		return nil
 	}, storeOptions{allowsNoDatabase: true}),
+}
+
+func rotateSigningKeyOnBoot(v *viper.Viper, st *storage.Storage) error {
+	if !v.GetBool("rotateSigningKeyOnBoot") {
+		return nil
+	}
+
+	set, err := st.Settings.Get()
+	if err != nil {
+		return err
+	}
+
+	key, err := settings.GenerateKey()
+	if err != nil {
+		return err
+	}
+
+	set.Key = key
+	if err := st.Settings.Save(set); err != nil {
+		return err
+	}
+
+	log.Println("Rotated JWT signing key on startup; all existing sessions were invalidated.")
+	return nil
 }
 
 func getServerSettings(v *viper.Viper, st *storage.Storage) (*settings.Server, error) {
