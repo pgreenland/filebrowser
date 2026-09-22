@@ -1,0 +1,130 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+
+stages:
+  - test
+  - build
+  - release
+
+variables:
+  GO_VERSION: "1.26"
+  NODE_VERSION: "24.11.1"
+  GORELEASER_VERSION: "v2.18.2"
+  COSIGN_VERSION: "v2.5.3"
+  GIT_DEPTH: "0"
+
+Lint Frontend:
+  stage: test
+  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/node:${NODE_VERSION}
+  tags:
+    - linux
+    - unprivileged
+  script:
+    - corepack enable
+    - cd frontend
+    - pnpm install --frozen-lockfile
+    - pnpm run lint
+
+Test Frontend:
+  stage: test
+  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/node:${NODE_VERSION}
+  tags:
+    - linux
+    - unprivileged
+  script:
+    - corepack enable
+    - cd frontend
+    - pnpm install --frozen-lockfile
+    - pnpm run test
+
+Lint Backend:
+  stage: test
+  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/golangci/golangci-lint:latest
+  tags:
+    - linux
+    - unprivileged
+  script:
+    - golangci-lint run
+
+Unit Test:
+  stage: test
+  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/golang:${GO_VERSION}
+  tags:
+    - linux
+    - unprivileged
+  script:
+    - go test --race ./...
+
+Build:
+  stage: build
+  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/golang:${GO_VERSION}-bookworm
+  tags:
+    - linux
+    - unprivileged
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils
+    - curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" | tar -xJ -C /opt
+    - ln -s "/opt/node-v${NODE_VERSION}-linux-x64/bin/node" /usr/bin/node
+    - ln -s "/opt/node-v${NODE_VERSION}-linux-x64/bin/npm" /usr/bin/npm
+    - npm install --global --prefix /opt/pnpm pnpm@10.33.4
+    - ln -sf /opt/pnpm/bin/pnpm /usr/bin/pnpm
+    - ln -sf /opt/pnpm/bin/pnpx /usr/bin/pnpx
+    - curl --proto '=https' --tlsv1.2 -sSf https://taskfile.dev/install.sh | sh -s -- -d -b /usr/bin
+  script:
+    - task build
+  artifacts:
+    paths:
+      - filebrowser
+    expire_in: 1 day
+
+Release:
+  stage: release
+  image: ubuntu:24.04
+  needs:
+    - Lint Frontend
+    - Lint Backend
+    - Unit Test
+    - Build
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+  tags:
+    - linux
+    - privileged
+  before_script:
+    - set -euxo pipefail
+    - apt-get update
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl xz-utils qemu-user-static
+    - rm -rf /var/lib/apt/lists/*
+    - curl -fsSL https://get.docker.com | sh
+    - docker buildx create --use --name filebrowser-builder
+    - docker buildx inspect --bootstrap
+    - curl -fsSL "https://go.dev/dl/go${GO_VERSION}.0.linux-amd64.tar.gz" | tar -xz -C /opt
+    - ln -s /opt/go/bin/go /usr/bin/go
+    - ln -s /opt/go/bin/gofmt /usr/bin/gofmt
+    - curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" | tar -xJ -C /opt
+    - ln -s "/opt/node-v${NODE_VERSION}-linux-x64/bin/node" /usr/bin/node
+    - ln -s "/opt/node-v${NODE_VERSION}-linux-x64/bin/npm" /usr/bin/npm
+    - npm install --global --prefix /opt/pnpm pnpm@10.33.4
+    - ln -sf /opt/pnpm/bin/pnpm /usr/bin/pnpm
+    - ln -sf /opt/pnpm/bin/pnpx /usr/bin/pnpx
+    - curl --proto '=https' --tlsv1.2 -sSf https://taskfile.dev/install.sh | sh -s -- -d -b /usr/bin
+    - curl -fsSL "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64" -o /usr/bin/cosign
+    - chmod +x /usr/bin/cosign
+    - curl -fsSLO "https://github.com/goreleaser/goreleaser/releases/download/${GORELEASER_VERSION}/goreleaser_Linux_x86_64.tar.gz"
+    - curl -fsSLO "https://github.com/goreleaser/goreleaser/releases/download/${GORELEASER_VERSION}/checksums.txt"
+    - curl -fsSLO "https://github.com/goreleaser/goreleaser/releases/download/${GORELEASER_VERSION}/checksums.txt.sigstore.json"
+    - cosign verify-blob --certificate-identity "https://github.com/goreleaser/goreleaser/.github/workflows/release.yml@refs/tags/${GORELEASER_VERSION}" --certificate-oidc-issuer https://token.actions.githubusercontent.com --bundle checksums.txt.sigstore.json checksums.txt
+    - sha256sum --ignore-missing -c checksums.txt
+    - mkdir -p /tmp/goreleaser
+    - tar -xzf goreleaser_Linux_x86_64.tar.gz -C /tmp/goreleaser goreleaser
+    - install -m 0755 /tmp/goreleaser/goreleaser /usr/bin/goreleaser
+    - rm goreleaser_Linux_x86_64.tar.gz checksums.txt checksums.txt.sigstore.json
+  script: |
+    set -euxo pipefail
+    docker info
+    docker login -u "${CI_REGISTRY_USER}" -p "${CI_REGISTRY_PASSWORD}" "${CI_REGISTRY}"
+    task build:frontend
+    GITLAB_TOKEN="${CI_JOB_TOKEN}" REGISTRY_IMAGE="${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/filebrowser" goreleaser release --clean --parallelism 1
