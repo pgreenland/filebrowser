@@ -127,4 +127,4 @@ Release:
     docker info
     docker login -u "${CI_REGISTRY_USER}" -p "${CI_REGISTRY_PASSWORD}" "${CI_REGISTRY}"
     task build:frontend
-    GITLAB_TOKEN="${CI_JOB_TOKEN}" REGISTRY_IMAGE="${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/filebrowser" goreleaser release --clean --parallelism 1
+    GITLAB_TOKEN="${CI_JOB_TOKEN}" REGISTRY_IMAGE="${CI_REGISTRY}/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/filebrowser" goreleaser release --clean --parallelism 1 --skip=homebrew

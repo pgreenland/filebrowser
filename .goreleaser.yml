@@ -5,6 +5,9 @@ project_name: filebrowser
 env:
   - GO111MODULE=on
 
+release:
+  disable: true
+
 builds:
   - env:
       - CGO_ENABLED=0
